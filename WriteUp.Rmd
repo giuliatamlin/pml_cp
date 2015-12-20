@@ -1,0 +1,252 @@
+---
+title: "WriteUp"
+output: html_document
+---
+Dataset from
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, 
+H. Qualitative Activity Recognition of Weight Lifting Exercises. 
+Proceedings of 4th International Conference in Cooperation with 
+SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3uJG8yOEC
+
+We start by loading caret and other potentially useful packages
+```{r}
+library(caret)
+library(corrplot)
+
+
+```
+
+And then provide remote urls to get the data from and set the working directory 
+
+```{r}
+
+train_url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv" 
+
+directory = "."
+setwd(directory)
+trainfile = "train.csv"
+testfile = "test.csv"
+train_dest = paste(directory, trainfile,sep ="/")
+test_dest = paste(directory, testfile,sep ="/")
+# if files do not exist then download them from url
+if (!file.exists(train_dest) | !file.exists(test_dest)){
+method = "curl"  
+download.file(train_url,destfile = train_dest,method = method)
+download.file(test_url,destfile = test_dest,method = method)
+}
+```
+Read in "raw" datasets
+
+```{r}
+train_raw <- read.csv(train_dest)
+test_raw <-read.csv(test_dest)
+```
+
+ Preprocess datasets
+
+Begin by removing columns with missing values
+```{r}
+cols = apply(train_raw,2,function(x) {sum(is.na(x))==0})
+train_raw = train_raw[,cols]
+
+```
+And do the same on the test set
+```{r}
+test_raw = test_raw[,cols]
+```
+
+We now proceed on to removing columns containing "#DIV/0!" as 
+it is not a meaningful value and hence will not be useful for prediction
+```{r}
+cols = apply(train_raw,2,function(x) {length(grep("#D",x))==0} )
+train_raw = train_raw[,cols]
+test_raw = test_raw[,cols]
+```
+
+At this point, after basic cleaning, the two datasets contain 60 columns.
+We can further reduce this number by noting that columns containing user names,
+time stamps and windows will not be useful for prediction and can thus be 
+eliminated
+
+```{r}
+train_raw = train_raw[,-grep("user_name|window|timestamp|^X",names(train_raw))]
+test_raw = test_raw[,-grep("user_name|window|timestamp|^X",names(test_raw))]
+```
+
+Which brings the number of columns down to 53.
+
+We can now perform a slightly more sofisticated pre-processing 
+by checking if any pairs of variables is significantly correlated
+in which case we can further reduce the dimensionality of the problem
+
+We thus construct the correlation matrix and set its diagonal to 0
+
+```{r}
+corrmat = abs(cor(train_raw[,-53]))
+diag(corrmat) = 0
+```
+We visualize the matrix and notice that there is some appreciable
+correlation between variables which is a hint that the dimensionality
+can be further reduced
+```{r}
+corrplot(corrmat,method = "color", tl.cex = 0.5)
+```
+
+Given the presence on non-negligible correlations we perform
+principal component analysis and retain only those
+variables contributing to 95% of the variance are retained.
+```{r}
+
+  
+  preobj = preProcess(train_raw[,-53],method = "pca", thresh = 0.95)
+  trainPC = predict(preobj,train_raw[,-53])
+  testPC = predict(preobj,test_raw[,-53])
+ 
+  train = trainPC
+  test = testPC
+ 
+  
+ncol(train)
+ncol(test)
+
+```
+
+At the end of this pre-processing phase we have obtained a polished
+training and test set. We now leave the test set aside and proceed to 
+data slicing, setting a seed for reproducibility.
+```{r}
+set.seed(20140604)
+```
+
+We then split the training dataset in two parts for validation
+and correspondingly create two "classe" vectors against which
+validate the model
+
+```{r}
+cvind = createDataPartition(train_raw$classe,p = 0.7,list = FALSE)
+train_cv = train[cvind,]
+classe_train_cv = train_raw$classe[cvind]
+test_cv = train[-cvind,]
+classe_test_cv = train_raw$classe[-cvind]
+```
+
+Once the data has been sliced we enter the model training part.
+We begin by choosing the parameters for cross validation
+
+```{r}
+controls1 = trainControl(method = "cv", number = 5)
+```
+
+I chose the number of folds for cross validation to be 5 in order
+for it not be too small (hence limit the bias) but still manageable
+from a computational point of view. Normally I would have done
+few trials trying different values for number.
+Also, having the time, it could be interesting to set number = 10
+and compare cross validation against repeated cross validation with 
+2 repeats and 5 folds both in terms of computational efficiency and
+performance of the fitted model.
+
+We now proceed to model training. I choose to use a decision-tree based algorithm
+as they
+appear to me best suited for multi-variate classification problems. 
+I begin by training a decision tree with maximum tree-depth = 30 (which should be
+the maximum allowed value)
+
+```{r}
+if (!exists("modFitDecTree")){
+  modFitDecTree <- train(classe_train_cv ~.,
+                   data = train_cv,
+                   method="rpart2",
+                   trControl = controls1,
+                   tuneGrid = data.frame(.maxdepth = 30))
+  
+  
+}
+print(modFitDecTree$finalModel)
+
+```
+
+and then a random forest: in order to improve computation speed I decided to 
+set mtry, i.e. the variables tried at each split, to be 18.
+The reason  is that after PCA all variables, being
+linearly independent, are likely to contribute on a split. On the other hand
+I wanted to prevent overfitting and gain some computational speed, so
+trying  approx 2/3 of the available variables seemed to me a good compromise.
+
+```{r}
+if (!exists("modFit1")){
+ modFit1 <- train(classe_train_cv ~.,
+                 data = train_cv,
+                 method="rf",
+                 trControl = controls1,
+                 prox = TRUE,
+                 allowParallel = TRUE, ntrees  = 250, 
+                 tuneGrid = data.frame(.mtry = 18))
+}
+print(modFit1$finalModel)
+```
+
+We now check how the fitted models do against
+the training set
+
+decision tree
+```{r}
+predict0dt = predict(modFitDecTree,train_cv)
+confusionMatrix(classe_train_cv,predict0dt)
+```
+
+random forest
+```{r}
+predict0rf = predict(modFit1,train_cv)
+confusionMatrix(classe_train_cv,predict0rf)
+```
+
+From examination of the results, we choose
+random forest as prediction algorithm 
+due to its improved accuracy. However,
+ the fact 
+that the training model is fitted with accuracy 
+1 can still be interpreted as 
+a warning sign of overfitting despite cross validation? 
+
+We now test the performance of the rf  model 
+on the part of the training test left out from training
+```{r}
+
+predict1 = predict(modFit1,test_cv)
+
+confusionMatrix(classe_test_cv,predict1)
+```
+
+Having obtained an estimated accuracy of 97% and out-of-sample error of 3%, 
+and taking
+into account time/computational limitations, I believe
+the algorithm performs sufficiently good to proceed to prediction.
+I therefore apply the fitted model to the test set and 
+write the answers in separate files
+
+```{r}
+predict_on_test = predict(modFit1,test)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+answers = as.character(predict_on_test)
+
+answers_dest = paste(directory, "prediction",sep ="/")
+if (!file.exists(answers_dest)){
+  dir.create(answers_dest)
+}
+setwd(answers_dest)
+
+pml_write_files(answers)
+```
+
+
+
