@@ -87,11 +87,12 @@ We thus construct the correlation matrix and set its diagonal to 0
 corrmat = abs(cor(train_raw[,-53]))
 diag(corrmat) = 0
 ```
-We visualize the matrix and notice that there is some appreciable
-correlation between variables which is a hint that the dimensionality
-can be further reduced
+if any pairs of variables is highly correlated then
+ the dimensionality of the set can be further reduced
+
 ```{r}
-corrplot(corrmat,method = "color", tl.cex = 0.5)
+length(which(corrmat>0.8))
+
 ```
 
 Given the presence on non-negligible correlations we perform
