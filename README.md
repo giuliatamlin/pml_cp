@@ -16,4 +16,5 @@ the folder containing the files corresponding to the prediction on the test set 
 instructions one file is generated per each element of the test set).
 The script generating the figure was too heavy to keep on the repository so the creation
 of the figure has been removed from the final Rmd file.
-************************************
+
+The compiled html file for this project is visible at http://htmlpreview.github.io/?https://github.com/giuliatamlin/pml_cp/blob/gh-pages/WriteUp.html
