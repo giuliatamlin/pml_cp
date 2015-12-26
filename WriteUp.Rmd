@@ -9,6 +9,8 @@ Proceedings of 4th International Conference in Cooperation with
 SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
 Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3uJG8yOEC
 
+The compiled html is visible at http://htmlpreview.github.io/?https://github.com/giuliatamlin/pml_cp/blob/gh-pages/WriteUp.html
+
 We start by loading caret and other potentially useful packages
 ```{r}
 library(caret)
